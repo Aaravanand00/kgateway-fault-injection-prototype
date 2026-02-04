@@ -1,0 +1,314 @@
+# API Prototype: Gateway-Level Fault Injection Examples
+# 
+# This file contains realistic examples of the proposed GatewayPolicy API
+# for fault injection in kgateway. These are NOT production CRD schemas,
+# but rather examples to demonstrate the user-facing API design.
+#
+# Each example is a complete, standalone YAML manifest that could be
+# applied to a Kubernetes cluster (assuming the CRD exists).
+
+---
+# ============================================================================
+# Example 1: Minimal Delay Injection
+# ============================================================================
+# Use case: Test how clients handle slow responses
+# Scope: Applies to a specific Gateway
+# Impact: 100% of requests delayed by 2 seconds
+
+apiVersion: gateway.kgateway.io/v1
+kind: GatewayPolicy
+metadata:
+  name: simple-delay
+  namespace: demo
+spec:
+  # Target the Gateway resource to attach this policy to
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: my-gateway
+  
+  # Fault injection configuration
+  faultInjection:
+    delay:
+      fixedDelay: 2s          # Inject a 2-second delay
+      percentage: 100.0       # Apply to 100% of requests
+
+---
+# ============================================================================
+# Example 2: Gateway-Level Policy (Affects All Routes)
+# ============================================================================
+# Use case: Test resilience across all services behind a gateway
+# Scope: Gateway-wide - affects all HTTPRoutes attached to this Gateway
+# Impact: 50% of ALL requests delayed by 5 seconds
+
+apiVersion: gateway.kgateway.io/v1
+kind: GatewayPolicy
+metadata:
+  name: gateway-wide-delay
+  namespace: production
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: api-gateway
+  
+  faultInjection:
+    delay:
+      fixedDelay: 5s          # 5-second delay
+      percentage: 50.0        # Apply to 50% of requests
+                              # Affects ALL routes through this gateway
+
+---
+# ============================================================================
+# Example 3: HTTPRoute-Level Policy (Single Route Only)
+# ============================================================================
+# Use case: Test a specific service endpoint without affecting others
+# Scope: Route-specific - only affects traffic matching the targeted HTTPRoute
+# Impact: 30% of requests to /payments delayed by 3 seconds
+
+apiVersion: gateway.kgateway.io/v1
+kind: GatewayPolicy
+metadata:
+  name: payment-service-delay
+  namespace: demo
+spec:
+  # Target a specific HTTPRoute instead of a Gateway
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: payment-route
+  
+  faultInjection:
+    delay:
+      fixedDelay: 3s          # 3-second delay
+      percentage: 30.0        # Apply to 30% of requests to this route only
+
+---
+# ============================================================================
+# Example 4: Abort Injection (Return HTTP 503)
+# ============================================================================
+# Use case: Simulate service unavailability and test circuit breakers
+# Scope: Gateway-level
+# Impact: 10% of requests return 503 Service Unavailable
+
+apiVersion: gateway.kgateway.io/v1
+kind: GatewayPolicy
+metadata:
+  name: service-unavailable
+  namespace: staging
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: staging-gateway
+  
+  faultInjection:
+    abort:
+      httpStatus: 503         # Return HTTP 503 (Service Unavailable)
+      percentage: 10.0        # Abort 10% of requests
+                              # Requests never reach the backend
+
+---
+# ============================================================================
+# Example 5: Combined Delay + Abort
+# ============================================================================
+# Use case: Simulate degraded service (slow AND failing)
+# Scope: HTTPRoute-level
+# Impact: 
+#   - 40% of requests delayed by 2 seconds
+#   - 15% of requests return HTTP 500
+#   - Some requests may be both delayed AND aborted
+
+apiVersion: gateway.kgateway.io/v1
+kind: GatewayPolicy
+metadata:
+  name: degraded-service-simulation
+  namespace: demo
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: user-service-route
+  
+  faultInjection:
+    # Delay configuration
+    delay:
+      fixedDelay: 2s          # 2-second delay
+      percentage: 40.0        # 40% chance of delay
+    
+    # Abort configuration (evaluated independently)
+    abort:
+      httpStatus: 500         # Return HTTP 500 (Internal Server Error)
+      percentage: 15.0        # 15% chance of abort
+    
+    # Note: Delay and abort are evaluated independently, so:
+    # - ~51% no fault (0.6 * 0.85)
+    # - ~34% delay only (0.4 * 0.85)
+    # - ~9% abort only (0.6 * 0.15)
+    # - ~6% both delay and abort (0.4 * 0.15)
+
+---
+# ============================================================================
+# Example 6: Production Safety - Staging-Only Policy
+# ============================================================================
+# Use case: Safe chaos testing in non-production environments
+# Scope: Staging namespace only
+# Safety: Namespace isolation prevents accidental production impact
+# Impact: 20% of requests delayed, 5% aborted
+
+apiVersion: gateway.kgateway.io/v1
+kind: GatewayPolicy
+metadata:
+  name: chaos-testing
+  namespace: staging  # ← IMPORTANT: Namespace-scoped, won't affect production
+  labels:
+    environment: staging
+    purpose: chaos-testing
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: staging-gateway  # ← Only affects gateways in 'staging' namespace
+  
+  faultInjection:
+    delay:
+      fixedDelay: 3s
+      percentage: 20.0        # Conservative percentage for safety
+    
+    abort:
+      httpStatus: 503
+      percentage: 5.0         # Low abort percentage to minimize disruption
+
+---
+# ============================================================================
+# Example 7: Gradual Rollout (Low Percentage)
+# ============================================================================
+# Use case: Start with minimal impact before increasing fault injection
+# Scope: Gateway-level
+# Impact: Only 1% of requests affected (safe for production-like environments)
+
+apiVersion: gateway.kgateway.io/v1
+kind: GatewayPolicy
+metadata:
+  name: canary-fault-injection
+  namespace: demo
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: my-gateway
+  
+  faultInjection:
+    delay:
+      fixedDelay: 5s
+      percentage: 1.0         # Start with 1% to validate behavior
+                              # Gradually increase: 1% → 5% → 10% → 25%
+
+---
+# ============================================================================
+# Example 8: Testing Retry Logic (High Abort Rate)
+# ============================================================================
+# Use case: Validate that client retry mechanisms work correctly
+# Scope: HTTPRoute-level for a specific test endpoint
+# Impact: 80% of requests return 503 (forces retries)
+
+apiVersion: gateway.kgateway.io/v1
+kind: GatewayPolicy
+metadata:
+  name: retry-test
+  namespace: test
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: test-endpoint-route
+  
+  faultInjection:
+    abort:
+      httpStatus: 503
+      percentage: 80.0        # High failure rate to test retry logic
+                              # Should be used ONLY in isolated test environments
+
+---
+# ============================================================================
+# Example 9: Different HTTP Status Codes
+# ============================================================================
+# Use case: Test how clients handle various HTTP error responses
+# Note: This example shows the API, but you'd use separate policies
+#       for different status codes (applied to different routes)
+
+apiVersion: gateway.kgateway.io/v1
+kind: GatewayPolicy
+metadata:
+  name: bad-gateway-simulation
+  namespace: demo
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: api-route
+  
+  faultInjection:
+    abort:
+      httpStatus: 502         # Bad Gateway (upstream failure)
+      percentage: 25.0
+
+---
+# ============================================================================
+# Example 10: Timeout Testing (Very Long Delay)
+# ============================================================================
+# Use case: Test client timeout handling
+# Scope: HTTPRoute-level
+# Impact: 50% of requests delayed by 30 seconds (exceeds typical timeouts)
+
+apiVersion: gateway.kgateway.io/v1
+kind: GatewayPolicy
+metadata:
+  name: timeout-test
+  namespace: demo
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: slow-endpoint
+  
+  faultInjection:
+    delay:
+      fixedDelay: 30s         # Very long delay to trigger timeouts
+      percentage: 50.0        # Half of requests will timeout
+
+---
+# ============================================================================
+# Additional Notes
+# ============================================================================
+#
+# Policy Attachment:
+# ------------------
+# - targetRef.kind: Gateway   → Affects all routes through that gateway
+# - targetRef.kind: HTTPRoute → Affects only that specific route
+#
+# Percentage Values:
+# ------------------
+# - 0.0   : No fault injection (effectively disabled)
+# - 1.0   : Minimal impact (1 in 100 requests)
+# - 50.0  : Moderate impact (half of requests)
+# - 100.0 : Maximum impact (all requests)
+#
+# Duration Format:
+# ----------------
+# - Supports: "1s", "500ms", "2m", "1h"
+# - Examples: "5s" (5 seconds), "100ms" (100 milliseconds)
+#
+# HTTP Status Codes:
+# ------------------
+# - Common values: 500 (Internal Server Error), 503 (Service Unavailable),
+#   502 (Bad Gateway), 429 (Too Many Requests)
+# - Must be in range 200-599
+#
+# Safety Best Practices:
+# ----------------------
+# 1. Always use namespace isolation (staging vs production)
+# 2. Start with low percentages (1-5%) before increasing
+# 3. Use Kubernetes RBAC to control who can create policies
+# 4. Monitor metrics to validate fault injection is working as expected
+# 5. Set up alerts for abnormal error rates before enabling wide-scale faults
