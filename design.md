@@ -24,6 +24,27 @@ Modern distributed systems must be designed for failure. The ability to test sys
 
 Fault injection at the gateway layer enables **proactive chaos engineering** and **continuous resilience validation** as part of CI/CD pipelines.
 
+
+### Chaos Engineering and Fault Injection
+
+Chaos Engineering is the practice of proactively testing a system by introducing controlled failures to identify reliability issues before they occur in production. Instead of waiting for real outages, teams intentionally simulate adverse conditions such as latency and service errors to validate system behavior, resilience mechanisms, and operational readiness in a safe and measurable manner.
+
+**Key aspects of Chaos Engineering at the gateway layer include**:
+
+- **Controlled failure injection**: Introduce delays or errors in a predictable and repeatable way.
+
+- **Real-world failure simulation**: Mimic common production issues such as network latency, upstream unavailability, and intermittent errors.
+
+- **Resilience validation**: Test client-side retries, timeouts, circuit breakers, and fallback logic under failure conditions.
+
+- **Centralized experimentation**: Apply chaos experiments at a single ingress point instead of modifying individual services.
+
+- **Blast radius control**: Use percentage-based fault injection to limit the impact and gradually increase scope.
+
+- **Zero application changes**: Backend services remain unaware of injected faults, reducing risk and operational overhead.
+
+- **CI/CD integration**: Enable continuous resilience testing as part of automated deployment pipelines.
+
 ---
 
 ## 2. Problem Analysis
